@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# PyInstaller artifacts
+build/
+dist/
+release/
+*.spec.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# User data — ROM, saves
+*.gcm
+*.iso
+*.gci
+*.bak
