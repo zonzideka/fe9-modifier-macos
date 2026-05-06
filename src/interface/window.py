@@ -8,7 +8,7 @@ from dolphin_memory_engine import un_hook, is_hooked
 
 from parameter import DataSetting
 from widget import SlotList, BackgroundFrame
-from . import Status, Ability, Skill, Item, Support, Other
+from . import Status, Ability, Skill, Item, Support, Other, ItemTemplate
 
 
 class Window(QMainWindow):
@@ -32,6 +32,7 @@ class Window(QMainWindow):
         item_frame = Item(self.slot_list)
         support_frame = Support(self.slot_list)
         other_frame = Other(None)
+        item_template_frame = ItemTemplate(None)
 
         self.slot_list.add_child(status_frame)
         self.slot_list.add_child(ability_frame)
@@ -39,6 +40,7 @@ class Window(QMainWindow):
         self.slot_list.add_child(item_frame)
         self.slot_list.add_child(support_frame)
         self.slot_list.add_child(other_frame)
+        # item_template_frame is independent of slot selection (item is global, not per-character)
 
         self.tab_widget = QTabWidget()
         self.tab_widget.addTab(status_frame, '状态')
@@ -47,6 +49,7 @@ class Window(QMainWindow):
         self.tab_widget.addTab(item_frame, '装备')
         self.tab_widget.addTab(support_frame, '支援')
         self.tab_widget.addTab(other_frame, '其他')
+        self.tab_widget.addTab(item_template_frame, '物品模板')
 
         main_frame = BackgroundFrame()
         main_layout = QHBoxLayout()

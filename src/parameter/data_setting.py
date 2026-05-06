@@ -222,7 +222,24 @@ class DataSetting:
 
             '所持金': (0x8032E7A1, 0x3),
             '奖励EX': (0x8032E7A5, 0x3),
+
+            # Item template fields — addresses are for entry 0 (Iron Sword).
+            # Use offset = idx * 96 (= ITEM_STEP) to address other items.
+            '物品_单价': (0x807D6A14 + 0x41, 0x1),
+            '物品_耐久': (0x807D6A14 + 0x42, 0x1),
+            '物品_攻击': (0x807D6A14 + 0x43, 0x1),
+            '物品_命中': (0x807D6A14 + 0x44, 0x1),
+            '物品_重量': (0x807D6A14 + 0x45, 0x1),
+            '物品_必杀': (0x807D6A14 + 0x46, 0x1),
+            '物品_最小射程': (0x807D6A14 + 0x47, 0x1),
+            '物品_最大射程': (0x807D6A14 + 0x48, 0x1),
+            '物品_武器经验': (0x807D6A14 + 0x4A, 0x1),
         }
+
+    # Item template enumeration constants (live ItemData section in RAM)
+    ITEM_BASE = 0x807D6A14   # address of item 0 (Iron Sword) entry start
+    ITEM_STEP = 0x60         # 96 bytes per entry
+    ITEM_COUNT = 0xBD        # 189 items
 
     def __getitem__(self, name: str):
         return self.setting.get(name)
