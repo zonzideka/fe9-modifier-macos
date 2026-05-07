@@ -234,6 +234,16 @@ class DataSetting:
             '物品_最小射程': (0x807D6A14 + 0x47, 0x1),
             '物品_最大射程': (0x807D6A14 + 0x48, 0x1),
             '物品_武器经验': (0x807D6A14 + 0x4A, 0x1),
+            # 6 trait pointer slots (4-byte BE absolute RAM addresses) at entry +0x18..+0x2C
+            '物品_特性1': (0x807D6A14 + 0x18, 0x4),
+            '物品_特性2': (0x807D6A14 + 0x1C, 0x4),
+            '物品_特性3': (0x807D6A14 + 0x20, 0x4),
+            '物品_特性4': (0x807D6A14 + 0x24, 0x4),
+            '物品_特性5': (0x807D6A14 + 0x28, 0x4),
+            '物品_特性6': (0x807D6A14 + 0x2C, 0x4),
+            # 2 effect pointer slots (effective-vs categories) at entry +0x30..+0x34
+            '物品_特效1': (0x807D6A14 + 0x30, 0x4),
+            '物品_特效2': (0x807D6A14 + 0x34, 0x4),
         }
 
     # Item template enumeration constants (live ItemData section in RAM)

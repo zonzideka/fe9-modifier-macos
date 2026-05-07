@@ -1913,6 +1913,55 @@ class EnumData(QObject):
             self.tr('PID_RIEUSION'): 'AFF_FIRE',
         }
 
+        # Item template trait/effect enums (used for runtime ItemData editing).
+        # CN strings are inlined (not run through self.tr) so we don't have to
+        # recompile zh.qm/jp.qm — these are short labels, not user-facing dialog text.
+        self.TRAIT_ENUM = {
+            'infinity':    '不损耗',
+            'valuable':    '贵重',
+            'fang':        '牙',
+            'longfar':     '远距',
+            'sealcrit':    '封必杀',
+            'weakA':       '弱点A',
+            'twice':       '勇者(连击)',
+            'poison':      '毒',
+            'sh':          '短刀',
+            'crit0':       '必杀=0',
+            'stormsw':     '风刃剑',
+            'beastonly':   '兽人专用',
+            'heroonly':    '主角专用',
+            'shootonly':   '射击专用',
+            'magsw':       '魔剑',
+            'resire':      '吸血',
+            'breath':      '龙息',
+            'beastsamul':  '兽人特效',
+            'blackonly':   '黑骑士专用',
+            'finalonly':   '终章专用',
+            'eqA':         '装备等级A',
+            'eqB':         '装备等级B',
+            'eqC':         '装备等级C',
+            'eqD':         '装备等级D',
+            'movtw':       '移动+2',
+            'areaattack':  '范围攻击',
+            'absolutehit': '必中',
+            'flutter':     '疾风斩',
+            'humanonly':   '人类专用',
+            'lycdamhalf':  '暴走伤害减半',
+            'lycsfxseal':  '暴走时无特效',
+            'sfxseal':     '封印特效',
+            'eqrevA':      '反装备A',
+            'JH':          'JH(未知)',
+        }
+        self.EFFECT_ENUM = {
+            'fly':         '飞行系',
+            'doorbreak':   '破门',
+            'beast':       '兽牙族',
+            'dragon':      '龙鳞族',
+            'armor':       '重装',
+            'knight':      '骑兵',
+            'alize':       'alize(未知)',
+        }
+
     def GROUP_MAPPING(self):
         return {
             0x802C8364: self.tr('this'),  # 己方
@@ -1992,3 +2041,36 @@ class EnumData(QObject):
     def text_mapping(enum_dict: dict, setting: tuple, offset: int):
         return {read_word(setting[0] + setting[-1] * idx) + offset: enum_item
                 for idx, enum_item in enumerate(enum_dict.items())}
+
+    def TRAIT_MAPPING(self):
+        """Scan all 189 ItemData entries' 6 trait pointer slots; build
+        {ram_address: (trait_name, cn_label)} for use in MapCombo."""
+        return self._scan_item_pointer_mapping(0x18, 6, self.TRAIT_ENUM)
+
+    def EFFECT_MAPPING(self):
+        """Scan all 189 ItemData entries' 2 effective-vs pointer slots."""
+        return self._scan_item_pointer_mapping(0x30, 2, self.EFFECT_ENUM)
+
+    @staticmethod
+    def _scan_item_pointer_mapping(field_offset: int, slot_count: int, enum_dict: dict):
+        from dolphin_memory_engine import read_word, read_bytes
+        ITEM_BASE = DataSetting.ITEM_BASE
+        ITEM_STEP = DataSetting.ITEM_STEP
+        ITEM_COUNT = DataSetting.ITEM_COUNT
+        seen_addrs = {}    # ptr -> ascii name
+        for i in range(ITEM_COUNT):
+            entry = ITEM_BASE + ITEM_STEP * i
+            for slot in range(slot_count):
+                ptr = read_word(entry + field_offset + slot * 4)
+                if not ptr or ptr in seen_addrs:
+                    continue
+                try:
+                    b = read_bytes(ptr, 32)
+                    end = b.index(b'\x00') if b'\x00' in b else 32
+                    s = b[:end].decode('ascii', errors='replace')
+                    if s in enum_dict:
+                        seen_addrs[ptr] = s
+                except Exception:
+                    pass
+        # Convert to MapCombo-compatible {addr: (key, label)} format
+        return {addr: (name, enum_dict[name]) for addr, name in seen_addrs.items()}

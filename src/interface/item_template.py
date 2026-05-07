@@ -17,7 +17,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QComboBox, QGridLayout, QLabel, QSizePolicy, QSpacerItem, QVBoxLayout
 
 from parameter import DataSetting, EnumData
-from widget import BackgroundFrame, NameLabel, ValueSpin
+from widget import BackgroundFrame, MapCombo, NameLabel, ValueSpin
 
 
 # noinspection PyTypeChecker
@@ -33,6 +33,8 @@ class ItemTemplate(BackgroundFrame):
         ('物品_最大射程', '最大射程'),
         ('物品_武器经验', '武器经验'),
     ]
+    TRAIT_FIELDS = [(f'物品_特性{i}', f'特性{i}') for i in range(1, 7)]
+    EFFECT_FIELDS = [(f'物品_特效{i}', f'特效{i}') for i in range(1, 3)]
 
     def __init__(self, parent):
         BackgroundFrame.__init__(self, parent)
@@ -45,31 +47,57 @@ class ItemTemplate(BackgroundFrame):
         # noinspection PyUnresolvedReferences
         self._selector.currentIndexChanged.connect(self._on_select)
 
-        # Field editors
+        # Numeric field editors
         for key, _ in self.FIELDS:
             self[key] = ValueSpin(self, value=DataSetting()[key])
+        # Trait dropdowns (6 slots)
+        for key, _ in self.TRAIT_FIELDS:
+            self[key] = MapCombo(self, EnumData().TRAIT_MAPPING, value=DataSetting()[key])
+            self[key].setMinimumWidth(160)
+        # Effect dropdowns (2 slots)
+        for key, _ in self.EFFECT_FIELDS:
+            self[key] = MapCombo(self, EnumData().EFFECT_MAPPING, value=DataSetting()[key])
+            self[key].setMinimumWidth(160)
 
         # Layout
         main_layout = QGridLayout()
         main_layout.addWidget(NameLabel('选择物品'), 0, 0, 1, 1)
         main_layout.addWidget(self._selector, 0, 1, 1, 3)
+        # Numeric fields in 2-column grid (rows 1-N)
         for i, (key, label) in enumerate(self.FIELDS):
             row = i // 2 + 1
             col = (i % 2) * 2
             main_layout.addWidget(NameLabel(label), row, col, 1, 1)
             main_layout.addWidget(self[key], row, col + 1, 1, 1)
 
+        numeric_rows = (len(self.FIELDS) + 1) // 2
+        # Trait dropdowns: 2-column layout (3 rows × 2 traits)
+        trait_start_row = numeric_rows + 1
+        for i, (key, label) in enumerate(self.TRAIT_FIELDS):
+            row = trait_start_row + i // 2
+            col = (i % 2) * 2
+            main_layout.addWidget(NameLabel(label), row, col, 1, 1)
+            main_layout.addWidget(self[key], row, col + 1, 1, 1)
+        # Effect dropdowns: 2-column layout (1 row)
+        effect_row = trait_start_row + 3
+        for i, (key, label) in enumerate(self.EFFECT_FIELDS):
+            col = (i % 2) * 2
+            main_layout.addWidget(NameLabel(label), effect_row, col, 1, 1)
+            main_layout.addWidget(self[key], effect_row, col + 1, 1, 1)
+
         # Caveat note
         note = QLabel(
             '注意：修改作用于<b>所有</b>该种类物品（例如改"铁剑"攻击会影响地图上所有铁剑）。'
-            '改动仅在当前游戏会话生效，读档恢复原值。'
+            '改动仅在当前游戏会话生效，读档恢复原值。<br>'
+            '特性/特效下拉只列出 ROM 内已存在的选项；将原本为"——"的槽位填入新指针在运行时是<b>安全</b>的'
+            '（无 ROM 重定位表限制），但仍建议先手动存档以防引擎对特定槽位有隐藏假设。'
         )
         note.setWordWrap(True)
         note.setStyleSheet('color:#888; padding:6px;')
-        main_layout.addWidget(note, len(self.FIELDS) // 2 + 2, 0, 1, 4)
+        main_layout.addWidget(note, effect_row + 1, 0, 1, 4)
 
         main_layout.addItem(QSpacerItem(1, 1, QSizePolicy.Expanding, QSizePolicy.Expanding),
-                            len(self.FIELDS) // 2 + 3, 0, 1, 4)
+                            effect_row + 2, 0, 1, 4)
         main_layout.setSpacing(3)
         self.setLayout(main_layout)
 
@@ -104,8 +132,8 @@ class ItemTemplate(BackgroundFrame):
         self.refresh()
 
     def refresh(self):
-        """Read current item entry's values into all field spinboxes."""
-        for key, _ in self.FIELDS:
+        """Read current item entry's values into all field editors."""
+        for key, _ in self.FIELDS + self.TRAIT_FIELDS + self.EFFECT_FIELDS:
             editor = self[key]
             if editor is not None:
                 editor.refresh()
