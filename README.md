@@ -25,6 +25,24 @@
 - ☑ 所持金 + 奖励 EX
 - ☑ **物品模板**（v1.3+ macOS 增强）：所有 189 件物品的攻/命/必/重/射程/耐久/单价 全局实时修改 — 改一次"铁剑攻击=99"，地图上所有铁剑立刻生效。读档恢复原值。
 - ☑ **物品特性 / 特效**（v1.4+）：每件物品可挂 6 条特性（infinity/twice/poison/crit0/...）+ 2 条特效（fly/armor/knight/beast/dragon/...）下拉切换。例如把"铁剑"加上 `twice` 特性 → 即变为勇者剑（连击）。
+- ☑ **导出 Dolphin AR 代码**（v1.5+）：把本会话所有改动序列化成 Action Replay 代码，写入 Dolphin GameSettings INI。下次启动游戏自动应用，**不需再开修改器**。
+   - 跨会话持久：日志存到 `~/Library/Application Support/PoR-Modifier/profiles.json`，关掉修改器再开仍累积
+   - 多 profile：可同时管理多套配置（默认 / hard-mode / 自定义），随时切换
+   - 注释化：导出对话框里每行代码前有 `# 物品 IID_RAGNELL 物品_特性3` 这样的标签，看得懂改了什么
+   - INI 段加 `*description` 总结，Dolphin 的 cheat 浏览器里可读
+
+### 导出代码工作流
+
+把不能写回 ROM 的修改（如给原本为空的特性槽加新指针）持久化的方法：
+
+1. 在 Dolphin → Config → General **启用 Cheats**
+2. 加载 GCM 进游戏内
+3. 启动修改器，改字段（每次改自动写入当前 profile 日志，落盘）
+4. 工具菜单 → **导出 Dolphin 代码…**
+5. 弹对话框：可复制、可写入 INI（`~/Library/Application Support/Dolphin/GameSettings/GFEJ01.ini`）
+6. **重新加载游戏（重启 Dolphin 或重启游戏）**，代码自动应用
+
+> 配套工具 [fe9-editor](https://github.com/zonzideka/fe9-editor) 走另一条路 — 把"安全字段"的 RAM 改动反向重定位后写回 GCM，永久持久化。两条路径互补：unsafe 槽走 modifier→AR→INI，safe 槽走 editor→GCM。
 
 ## macOS 特别说明
 
@@ -56,16 +74,24 @@ codesign --force --deep --sign - --entitlements entitlements.plist "dist/苍炎�
 src/                            原版 Python + PySide6 源码
 ├── PoR.py                      主入口
 ├── interface/                  各功能 tab UI
+│   ├── export_codes.py         AR 代码生成 + Dolphin INI 写入 (v1.5)
+│   └── export_dialog.py        导出对话框 (v1.5)
 ├── widget/                     可复用控件（含 customize.py / bool_check.py 的 macOS 兼容补丁）
 ├── parameter/
 │   ├── data_setting.py         FE9 内存偏移表（0x802AF... 区段，~150 个字段）
-│   └── enum_data.py            ~2000 行的人物 / 职业 / 技能 / 物品 enum + PNG 资源映射
-└── structure/                  数据访问基类
+│   ├── enum_data.py            ~2000 行的人物 / 职业 / 技能 / 物品 enum + PNG 资源映射
+│   └── address_decoder.py      RAM 地址 → 人类可读标签 (v1.5)
+└── structure/
+    ├── value.py / text.py      数据访问基类
+    └── dme_tracking.py         write_bytes wrapper + 多 profile JSON 持久化 (v1.5)
+tests/                          单元测试 (v1.5+; 40 用例覆盖 dme_tracking / export_codes / decoder)
 resource/                       图标 / 头像 / 武器图 PNG / QSS 样式
 PoR-macos.spec                  macOS PyInstaller 配置（产 .app bundle）
 entitlements.plist              修改器自身的 cs.debugger entitlement
 MACOS-SETUP.md                  Dolphin 重签步骤 + 故障排查
 ```
+
+跑测试：`.venv/bin/python -m unittest discover -s tests -v`
 
 ## 与 Windows 原版的差异
 

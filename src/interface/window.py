@@ -3,14 +3,17 @@
 
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QIcon, QCloseEvent, QPixmap
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QPushButton, QTabWidget, QHBoxLayout, QVBoxLayout
+from PySide6.QtWidgets import (
+    QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton,
+    QStatusBar, QTabWidget, QVBoxLayout,
+)
 from dolphin_memory_engine import un_hook, is_hooked
 
 from parameter import DataSetting
+from parameter.address_decoder import annotate_writes
 from structure import dme_tracking
 from widget import SlotList, BackgroundFrame
 from . import Status, Ability, Skill, Item, Support, Other, ItemTemplate
-from .export_codes import writes_to_ar_codes
 from .export_dialog import ExportDialog
 
 
@@ -61,51 +64,143 @@ class Window(QMainWindow):
         main_frame.setLayout(main_layout)
 
         self.setCentralWidget(main_frame)
-        self.setWindowTitle('苍炎的轨迹 动态修改器 V1.2')
+        self.setWindowTitle('苍炎的轨迹 动态修改器 V1.5')
         self.setWindowIcon(QIcon(':/ICON/icon.ico'))
         self.setMinimumHeight(480)
 
+        self._status_label = QLabel()
+        self.setStatusBar(QStatusBar())
+        self.statusBar().addPermanentWidget(self._status_label, 1)
+
         self._build_menu()
         self.refresh()
+        self._refresh_status_bar()
 
         # noinspection SpellCheckingInspection
         skill_frame['SID_EQUIPLIGHT'].stateChanged.connect(self.charge_light)
 
     def _build_menu(self):
+        # keep strong refs to QMenu objects — PySide6 sometimes drops Python
+        # wrappers for menu hierarchy nodes if no reachable Python ref exists.
         m = self.menuBar()
-        tools = m.addMenu('工具(&T)')
+        self._tools_menu = m.addMenu('工具(&T)')
+
         a = QAction('导出 Dolphin 代码…', self)
         a.triggered.connect(self.act_export_codes)
-        tools.addAction(a)
-        a = QAction('清空本次会话日志', self)
+        self._tools_menu.addAction(a)
+        a = QAction('清空当前 profile 日志', self)
         a.triggered.connect(self.act_reset_log)
-        tools.addAction(a)
+        self._tools_menu.addAction(a)
+
+        self._tools_menu.addSeparator()
+
+        self._profile_menu = self._tools_menu.addMenu('切换 profile')
+        a = QAction('新建 profile…', self)
+        a.triggered.connect(self.act_new_profile)
+        self._tools_menu.addAction(a)
+        a = QAction('重命名当前 profile…', self)
+        a.triggered.connect(self.act_rename_profile)
+        self._tools_menu.addAction(a)
+        a = QAction('删除当前 profile…', self)
+        a.triggered.connect(self.act_delete_profile)
+        self._tools_menu.addAction(a)
+
+        self._refresh_profile_menu()
+
+    def _refresh_profile_menu(self):
+        self._profile_menu.clear()
+        cur = dme_tracking.current_profile_name()
+        for name in dme_tracking.list_profiles():
+            a = QAction(name, self)
+            a.setCheckable(True)
+            a.setChecked(name == cur)
+            a.triggered.connect(lambda _checked=False, n=name: self.act_switch_profile(n))
+            self._profile_menu.addAction(a)
+        self._refresh_status_bar()
+
+    def _refresh_status_bar(self):
+        if not hasattr(self, '_status_label'):
+            return
+        cur = dme_tracking.current_profile_name()
+        n = dme_tracking.count()
+        self._status_label.setText(f'profile: {cur}  |  {n} 处未导出修改')
 
     def act_export_codes(self):
         writes = dme_tracking.snapshot()
         if not writes:
             QMessageBox.information(
                 self, '无可导出的修改',
-                '本次会话还没有任何 RAM 写入,或所有修改都已被还原回初始值。\n\n'
+                '当前 profile 还没有任何 RAM 写入,或所有修改都已被还原回初始值。\n\n'
                 '操作流程:\n'
                 '  1) 在修改器各 tab 中改字段\n'
                 '  2) 再来这里导出'
             )
             return
-        lines = writes_to_ar_codes(writes)
-        ExportDialog(lines, len(writes), self).exec()
+        annotated = annotate_writes(writes)
+        ExportDialog(annotated, profile_name=dme_tracking.current_profile_name(), parent=self).exec()
+        self._refresh_status_bar()
 
     def act_reset_log(self):
         res = QMessageBox.question(
-            self, '清空会话日志',
-            '清空目前已记录的所有 RAM 写入日志? 这不影响 RAM 中已写入的实际值,\n'
-            '只是让"导出代码"重新从此刻起算。',
+            self, '清空当前 profile 日志',
+            f'清空 profile {dme_tracking.current_profile_name()!r} 的所有 RAM 写入日志? \n'
+            '这不影响 RAM 中已写入的实际值,只是让"导出代码"重新从此刻起算。',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if res != QMessageBox.StandardButton.Yes:
             return
         dme_tracking.reset()
+        self._refresh_status_bar()
+
+    def act_switch_profile(self, name: str):
+        try:
+            dme_tracking.set_current_profile(name)
+        except Exception as e:
+            QMessageBox.critical(self, '切换失败', str(e))
+            return
+        self._refresh_profile_menu()
+
+    def act_new_profile(self):
+        name, ok = QInputDialog.getText(self, '新建 profile', '名称:')
+        if not ok or not name.strip():
+            return
+        try:
+            dme_tracking.new_profile(name.strip())
+        except Exception as e:
+            QMessageBox.critical(self, '新建失败', str(e))
+            return
+        self._refresh_profile_menu()
+
+    def act_rename_profile(self):
+        cur = dme_tracking.current_profile_name()
+        new, ok = QInputDialog.getText(self, '重命名', f'重命名 profile {cur!r} 为:', text=cur)
+        if not ok or not new.strip() or new.strip() == cur:
+            return
+        try:
+            dme_tracking.rename_profile(cur, new.strip())
+        except Exception as e:
+            QMessageBox.critical(self, '重命名失败', str(e))
+            return
+        self._refresh_profile_menu()
+
+    def act_delete_profile(self):
+        cur = dme_tracking.current_profile_name()
+        res = QMessageBox.question(
+            self, '删除 profile',
+            f'删除 profile {cur!r}? 该 profile 中所有未导出的修改记录将丢失。\n'
+            '这不影响已写入 INI 的代码或 RAM 中已生效的值。',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if res != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            dme_tracking.delete_profile(cur)
+        except Exception as e:
+            QMessageBox.critical(self, '删除失败', str(e))
+            return
+        self._refresh_profile_menu()
 
     def refresh(self):
         self.slot_list.refresh()

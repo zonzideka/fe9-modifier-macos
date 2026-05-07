@@ -33,13 +33,25 @@ def gamesettings_dir() -> str:
     return os.path.expanduser('~/Library/Application Support/Dolphin/GameSettings')
 
 
-def writes_to_ar_codes(writes: list) -> list:
-    """Convert [(addr, value_bytes, baseline_bytes), ...] into AR code lines.
+def writes_to_ar_codes(writes: list, include_comments: bool = False) -> list:
+    """Convert tracked writes into AR code lines.
 
-    Splits multi-byte writes into 4/2/1-byte ops as needed. Per-byte addresses
-    are computed from the chunk's offset within the write."""
+    Each entry is either a 3-tuple (addr, value_bytes, baseline_bytes) or a
+    4-tuple (addr, value_bytes, baseline_bytes, label). When include_comments
+    is True and a label is present, a ``# label`` line is emitted before that
+    entry's code lines (suitable for the on-screen preview).
+
+    Splits multi-byte writes into 4/2/1-byte ops as needed; per-byte addresses
+    are computed from each chunk's offset within the write."""
     lines = []
-    for addr, val, _base in writes:
+    for entry in writes:
+        if len(entry) >= 4:
+            addr, val, _base, label = entry[0], entry[1], entry[2], entry[3]
+        else:
+            addr, val, _base = entry[0], entry[1], entry[2]
+            label = ''
+        if include_comments and label:
+            lines.append(f'# {label}')
         offset = 0
         n = len(val)
         while offset < n:
@@ -61,9 +73,23 @@ def writes_to_ar_codes(writes: list) -> list:
     return lines
 
 
-def update_ini_text(text: str, cheat_name: str, ar_lines: list) -> str:
+def description_from_writes(writes: list, max_items: int = 5) -> str:
+    """Build a `*description` line summarizing the labelled writes."""
+    labels = [e[3] for e in writes if len(e) >= 4 and e[3]]
+    if not labels:
+        return ''
+    head = labels[:max_items]
+    tail = f'，… 还有 {len(labels) - max_items} 处' if len(labels) > max_items else ''
+    return '、'.join(head) + tail
+
+
+def update_ini_text(text: str, cheat_name: str, ar_lines: list, description: str = '') -> str:
     """Pure-text INI update: remove our previous block, append new one to
-    [ActionReplay], and ensure the cheat is listed under [ActionReplay_Enabled]."""
+    [ActionReplay], and ensure the cheat is listed under [ActionReplay_Enabled].
+
+    If *description* is non-empty, a ``*description`` line is inserted between
+    the cheat name and its code lines (Dolphin treats ``*`` lines as the
+    cheat's user-facing description)."""
     sections = []
     current = ('', [])
     for line in text.splitlines():
@@ -91,6 +117,8 @@ def update_ini_text(text: str, cheat_name: str, ar_lines: list) -> str:
     if ar_lines_existing:
         ar_lines_existing.append('')
     ar_lines_existing.append(target)
+    if description:
+        ar_lines_existing.append(f'*{description}')
     ar_lines_existing.extend(ar_lines)
     sections[ar_idx] = (sections[ar_idx][0], ar_lines_existing)
 
@@ -132,9 +160,16 @@ def _strip_cheat_block(lines: list, target: str) -> list:
     return out
 
 
-def write_to_dolphin_ini(ar_lines: list, cheat_name: str = CHEAT_NAME, game_id: str = GAME_ID) -> str:
-    """Update Dolphin's GameSettings INI for the given game. Returns the path
-    written. Creates the directory and file if missing."""
+def write_to_dolphin_ini(annotated_writes: list, cheat_name: str = CHEAT_NAME,
+                         game_id: str = GAME_ID) -> str:
+    """Generate AR codes from annotated writes and write/refresh the cheat
+    block in Dolphin's GameSettings INI. Comments are stripped (kept only for
+    the on-screen preview); a ``*description`` line summarizes labelled writes.
+
+    Returns the absolute INI path. Creates the directory and file if missing."""
+    code_lines = writes_to_ar_codes(annotated_writes, include_comments=False)
+    description = description_from_writes(annotated_writes)
+
     settings = gamesettings_dir()
     os.makedirs(settings, exist_ok=True)
     path = os.path.join(settings, f'{game_id}.ini')
@@ -142,7 +177,7 @@ def write_to_dolphin_ini(ar_lines: list, cheat_name: str = CHEAT_NAME, game_id: 
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
             text = f.read()
-    new_text = update_ini_text(text, cheat_name, ar_lines)
+    new_text = update_ini_text(text, cheat_name, code_lines, description=description)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(new_text)
     return path
