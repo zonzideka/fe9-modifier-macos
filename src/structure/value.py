@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from dolphin_memory_engine import read_bytes, write_bytes
+from dolphin_memory_engine import read_bytes
+from .dme_tracking import write_bytes  # tracked wrapper — logs every write for AR-code export
 
 
 class Value:
