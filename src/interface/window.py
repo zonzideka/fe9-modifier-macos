@@ -64,7 +64,7 @@ class Window(QMainWindow):
         main_frame.setLayout(main_layout)
 
         self.setCentralWidget(main_frame)
-        self.setWindowTitle('苍炎的轨迹 动态修改器 V1.5.1')
+        self.setWindowTitle('苍炎的轨迹 动态修改器 V1.5.2')
         self.setWindowIcon(QIcon(':/ICON/icon.ico'))
         self.setMinimumHeight(480)
 

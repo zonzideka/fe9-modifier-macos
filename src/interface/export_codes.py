@@ -83,13 +83,15 @@ def description_from_writes(writes: list, max_items: int = 5) -> str:
     return '、'.join(head) + tail
 
 
-def update_ini_text(text: str, cheat_name: str, ar_lines: list, description: str = '') -> str:
+def update_ini_text(text: str, cheat_name: str, ar_lines: list) -> str:
     """Pure-text INI update: remove our previous block, append new one to
     [ActionReplay], and ensure the cheat is listed under [ActionReplay_Enabled].
 
-    If *description* is non-empty, a ``*description`` line is inserted between
-    the cheat name and its code lines (Dolphin treats ``*`` lines as the
-    cheat's user-facing description)."""
+    Dolphin's [ActionReplay] section does NOT accept ``*description`` lines —
+    the parser only knows ``$name`` (start of cheat) and hex code lines, and
+    raises 'Invalid AR code' on anything else. (``*description`` is Gecko-code
+    syntax, not AR.) So we never emit description lines into the INI; the
+    on-screen dialog already shows ``# label`` comments alongside each code."""
     sections = []
     current = ('', [])
     for line in text.splitlines():
@@ -117,8 +119,6 @@ def update_ini_text(text: str, cheat_name: str, ar_lines: list, description: str
     if ar_lines_existing:
         ar_lines_existing.append('')
     ar_lines_existing.append(target)
-    if description:
-        ar_lines_existing.append(f'*{description}')
     ar_lines_existing.extend(ar_lines)
     sections[ar_idx] = (sections[ar_idx][0], ar_lines_existing)
 
@@ -163,12 +163,12 @@ def _strip_cheat_block(lines: list, target: str) -> list:
 def write_to_dolphin_ini(annotated_writes: list, cheat_name: str = CHEAT_NAME,
                          game_id: str = GAME_ID) -> str:
     """Generate AR codes from annotated writes and write/refresh the cheat
-    block in Dolphin's GameSettings INI. Comments are stripped (kept only for
-    the on-screen preview); a ``*description`` line summarizes labelled writes.
+    block in Dolphin's GameSettings INI. Only ``$cheat_name`` and hex code
+    lines are emitted — the AR parser rejects anything else, so labels stay
+    in the on-screen dialog as ``# label`` rather than going into the INI.
 
     Returns the absolute INI path. Creates the directory and file if missing."""
     code_lines = writes_to_ar_codes(annotated_writes, include_comments=False)
-    description = description_from_writes(annotated_writes)
 
     settings = gamesettings_dir()
     os.makedirs(settings, exist_ok=True)
@@ -177,7 +177,7 @@ def write_to_dolphin_ini(annotated_writes: list, cheat_name: str = CHEAT_NAME,
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
             text = f.read()
-    new_text = update_ini_text(text, cheat_name, code_lines, description=description)
+    new_text = update_ini_text(text, cheat_name, code_lines)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(new_text)
     return path

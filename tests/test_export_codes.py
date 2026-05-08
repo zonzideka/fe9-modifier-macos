@@ -130,16 +130,34 @@ class TestINIRoundtrip(unittest.TestCase):
         # Still one entry under enabled
         self.assertEqual(result.count(f'${CHEAT_NAME}'), 2)
 
-    def test_description_inserted(self):
-        result = update_ini_text('', CHEAT_NAME, ['047D6D34 807E8D82'],
-                                 description='item 8 trait3')
-        self.assertIn('*item 8 trait3', result)
-
-    def test_no_description_no_star_line(self):
+    def test_no_star_lines_emitted(self):
+        # Dolphin's [ActionReplay] parser rejects '*description' lines (those
+        # are Gecko syntax). The INI must contain only $name + hex code lines.
         result = update_ini_text('', CHEAT_NAME, ['047D6D34 807E8D82'])
         for line in result.splitlines():
             self.assertFalse(line.startswith('*'),
                              f'Unexpected description line: {line!r}')
+
+    def test_only_dollar_or_hex_or_blank_or_section_lines(self):
+        # Every line in [ActionReplay] section must be one of:
+        #   - blank
+        #   - section header [Foo]
+        #   - $cheat name
+        #   - hex AR code (8 hex + space + 8 hex)
+        import re
+        result = update_ini_text('', CHEAT_NAME, ['047D6D34 807E8D82', '027D6A14 00001234'])
+        in_ar = False
+        ar_pat = re.compile(r'^[0-9A-Fa-f]{8} [0-9A-Fa-f]{8}$')
+        for line in result.splitlines():
+            s = line.strip()
+            if s.startswith('[') and s.endswith(']'):
+                in_ar = (s == '[ActionReplay]')
+                continue
+            if not in_ar or not s:
+                continue
+            self.assertTrue(
+                s.startswith('$') or ar_pat.match(s),
+                f'AR section has line that Dolphin would reject: {line!r}')
 
 
 class TestStripOurBlocks(unittest.TestCase):
