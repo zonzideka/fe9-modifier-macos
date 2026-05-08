@@ -145,10 +145,20 @@ def write_bytes(addr: int, data) -> None:
     _save()
 
 
-def snapshot() -> list:
+def snapshot(persistable_only: bool = True) -> list:
     """List of (addr, value_bytes, baseline_bytes) for the current profile,
-    sorted by addr, with no-op writes (final value == baseline) filtered out."""
+    sorted by addr, with no-op writes (final value == baseline) filtered out.
+
+    By default also drops writes targeting non-persistable addresses (anything
+    outside the ItemData template region). Those are session-specific runtime
+    state — gold, current HP, equipment slots, the "已行动" flag — and forcing
+    them on every game load via AR codes either no-ops or actively breaks the
+    game (e.g. permanent infinite action). Pass persistable_only=False for an
+    unfiltered view (debugging, or showing the user how many transient edits
+    exist in the current session)."""
     _ensure_loaded()
+    if persistable_only:
+        from parameter.address_decoder import is_persistable
     with _lock:
         cur = _cur()
         out = []
@@ -157,13 +167,16 @@ def snapshot() -> list:
             base = cur['baseline'].get(addr)
             if base is not None and base == new:
                 continue
+            if persistable_only and not is_persistable(addr):
+                continue
             out.append((addr, new, base))
         return out
 
 
-def count() -> int:
-    """Number of net (non-reverted) writes in the current profile."""
-    return len(snapshot())
+def count(persistable_only: bool = True) -> int:
+    """Number of net (non-reverted) writes; by default in the persistable
+    region only. Pass persistable_only=False to count everything."""
+    return len(snapshot(persistable_only=persistable_only))
 
 
 def reset() -> None:

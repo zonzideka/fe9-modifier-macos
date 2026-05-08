@@ -51,7 +51,7 @@ class TestWriteAndSnapshot(unittest.TestCase):
     def test_basic_write_appears_in_snapshot(self):
         t, _ = _fresh_module()
         t.write_bytes(0x1000, b'\xAB\xCD')
-        s = t.snapshot()
+        s = t.snapshot(persistable_only=False)
         self.assertEqual(len(s), 1)
         addr, val, base = s[0]
         self.assertEqual(addr, 0x1000)
@@ -63,15 +63,15 @@ class TestWriteAndSnapshot(unittest.TestCase):
         # Write a non-zero value, then "revert" by writing zeros back
         t.write_bytes(0x2000, b'\xFF\xFF')
         t.write_bytes(0x2000, b'\x00\x00')
-        self.assertEqual(t.snapshot(), [])
-        self.assertEqual(t.count(), 0)
+        self.assertEqual(t.snapshot(persistable_only=False), [])
+        self.assertEqual(t.count(persistable_only=False), 0)
 
     def test_first_baseline_persists_across_overwrites(self):
         t, _ = _fresh_module()
         t.write_bytes(0x3000, b'\x11')
         t.write_bytes(0x3000, b'\x22')
         t.write_bytes(0x3000, b'\x33')
-        s = t.snapshot()
+        s = t.snapshot(persistable_only=False)
         self.assertEqual(len(s), 1)
         self.assertEqual(s[0][1], b'\x33')      # latest value
         self.assertEqual(s[0][2], b'\x00')      # original baseline
@@ -83,9 +83,28 @@ class TestWriteAndSnapshot(unittest.TestCase):
         t.write_bytes(0x5000, b'\x02')
         t.set_current_profile(t.DEFAULT_PROFILE)
         t.reset()
-        self.assertEqual(t.snapshot(), [])
+        self.assertEqual(t.snapshot(persistable_only=False), [])
         t.set_current_profile('alt')
-        self.assertEqual(len(t.snapshot()), 1)
+        self.assertEqual(len(t.snapshot(persistable_only=False)), 1)
+
+    def test_persistable_only_filters_non_item_writes(self):
+        from parameter.address_decoder import ITEM_BASE
+        t, _ = _fresh_module()
+        # ItemData write — should be persistable
+        t.write_bytes(ITEM_BASE + 0x41, b'\xff')
+        # SLOT write — should NOT be persistable
+        t.write_bytes(0x802AF78C, b'\x63')
+        # Random address — should NOT be persistable
+        t.write_bytes(0x12345, b'\xAA')
+
+        all_writes = t.snapshot(persistable_only=False)
+        persistable_writes = t.snapshot(persistable_only=True)
+        self.assertEqual(len(all_writes), 3)
+        self.assertEqual(len(persistable_writes), 1)
+        self.assertEqual(persistable_writes[0][0], ITEM_BASE + 0x41)
+        # count() defaults to persistable_only=True
+        self.assertEqual(t.count(), 1)
+        self.assertEqual(t.count(persistable_only=False), 3)
 
 
 class TestPersistence(unittest.TestCase):
@@ -103,7 +122,7 @@ class TestPersistence(unittest.TestCase):
         t2._config_dir = lambda: store_dir
         _install_mocks(t2)
         t2._loaded = False
-        s = t2.snapshot()
+        s = t2.snapshot(persistable_only=False)
         self.assertEqual(len(s), 2)
         self.assertEqual({addr for addr, _, _ in s}, {0x6000, 0x7000})
 
@@ -114,7 +133,7 @@ class TestPersistence(unittest.TestCase):
         # Force reload
         t._loaded = False
         # Should not raise; falls back to empty defaults
-        self.assertEqual(t.snapshot(), [])
+        self.assertEqual(t.snapshot(persistable_only=False), [])
         self.assertEqual(t.list_profiles(), [t.DEFAULT_PROFILE])
 
 
@@ -142,7 +161,7 @@ class TestProfiles(unittest.TestCase):
         t.write_bytes(0x8000, b'\x01')
         t.rename_profile(t.DEFAULT_PROFILE, 'production')
         self.assertEqual(t.current_profile_name(), 'production')
-        self.assertEqual(len(t.snapshot()), 1)
+        self.assertEqual(len(t.snapshot(persistable_only=False)), 1)
 
     def test_delete_last_profile_refused(self):
         t, _ = _fresh_module()
@@ -163,9 +182,9 @@ class TestProfiles(unittest.TestCase):
         t.new_profile('alt')
         t.write_bytes(0xB000, b'\x02')
         # Default has 0xA000, alt has 0xB000
-        self.assertEqual({a for a, _, _ in t.snapshot()}, {0xB000})
+        self.assertEqual({a for a, _, _ in t.snapshot(persistable_only=False)}, {0xB000})
         t.set_current_profile(t.DEFAULT_PROFILE)
-        self.assertEqual({a for a, _, _ in t.snapshot()}, {0xA000})
+        self.assertEqual({a for a, _, _ in t.snapshot(persistable_only=False)}, {0xA000})
 
 
 if __name__ == '__main__':

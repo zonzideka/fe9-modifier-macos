@@ -16,6 +16,7 @@ if SRC not in sys.path:
 from interface.export_codes import (
     CHEAT_NAME,
     description_from_writes,
+    strip_our_blocks,
     update_ini_text,
     writes_to_ar_codes,
 )
@@ -139,6 +140,50 @@ class TestINIRoundtrip(unittest.TestCase):
         for line in result.splitlines():
             self.assertFalse(line.startswith('*'),
                              f'Unexpected description line: {line!r}')
+
+
+class TestStripOurBlocks(unittest.TestCase):
+    def test_strip_removes_our_block_only(self):
+        existing = (
+            f'[ActionReplay]\n'
+            f'$Other Cheat\n'
+            f'047C0000 12345678\n'
+            f'\n'
+            f'${CHEAT_NAME}\n'
+            f'*old description\n'
+            f'04ABABAB DEADBEEF\n'
+            f'04CDCDCD CAFEBABE\n'
+            f'\n'
+            f'$Yet Another\n'
+            f'04FFFF00 11223344\n'
+            f'\n'
+            f'[ActionReplay_Enabled]\n'
+            f'$Other Cheat\n'
+            f'${CHEAT_NAME}\n'
+            f'$Yet Another\n'
+        )
+        result = strip_our_blocks(existing, CHEAT_NAME)
+        # Our codes & description are gone
+        self.assertNotIn('DEADBEEF', result)
+        self.assertNotIn('CAFEBABE', result)
+        self.assertNotIn('old description', result)
+        # Other cheats survive
+        self.assertIn('$Other Cheat', result)
+        self.assertIn('047C0000 12345678', result)
+        self.assertIn('$Yet Another', result)
+        self.assertIn('04FFFF00 11223344', result)
+        # Our cheat name appears nowhere now
+        self.assertNotIn(f'${CHEAT_NAME}', result)
+
+    def test_strip_on_empty_text(self):
+        self.assertEqual(strip_our_blocks('', CHEAT_NAME).strip(), '')
+
+    def test_strip_with_no_match_is_idempotent(self):
+        existing = '[ActionReplay]\n$Other\n040 0\n'
+        # Result content (modulo trailing newline normalization) should equal input
+        result = strip_our_blocks(existing, CHEAT_NAME)
+        self.assertIn('$Other', result)
+        self.assertIn('040 0', result)
 
 
 if __name__ == '__main__':

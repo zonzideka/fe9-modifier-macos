@@ -181,3 +181,54 @@ def write_to_dolphin_ini(annotated_writes: list, cheat_name: str = CHEAT_NAME,
     with open(path, 'w', encoding='utf-8') as f:
         f.write(new_text)
     return path
+
+
+def strip_our_blocks(text: str, cheat_name: str = CHEAT_NAME) -> str:
+    """Remove our cheat from both [ActionReplay] (the code block) and
+    [ActionReplay_Enabled] (the activation list). Other cheats are
+    preserved verbatim."""
+    sections = []
+    current = ('', [])
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith('[') and s.endswith(']'):
+            sections.append(current)
+            current = (s, [])
+        else:
+            current[1].append(line)
+    sections.append(current)
+
+    target = f'${cheat_name}'
+    for i, (name, lines) in enumerate(sections):
+        if name == '[ActionReplay]':
+            sections[i] = (name, _strip_cheat_block(lines, target))
+        elif name == '[ActionReplay_Enabled]':
+            sections[i] = (name, [l for l in lines if l.strip() != target])
+
+    out = []
+    for name, lines in sections:
+        if name:
+            if out and out[-1] != '':
+                out.append('')
+            out.append(name)
+        out.extend(lines)
+    while out and out[-1] == '':
+        out.pop()
+    out.append('')
+    return '\n'.join(out)
+
+
+def clear_dolphin_ini(cheat_name: str = CHEAT_NAME, game_id: str = GAME_ID) -> str:
+    """Remove our cheat block from Dolphin's GameSettings INI. Returns the path
+    that was processed. If the INI doesn't exist, returns the path it would be
+    at without creating the file."""
+    settings = gamesettings_dir()
+    path = os.path.join(settings, f'{game_id}.ini')
+    if not os.path.exists(path):
+        return path
+    with open(path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    new_text = strip_our_blocks(text, cheat_name)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(new_text)
+    return path

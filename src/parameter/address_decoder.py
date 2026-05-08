@@ -107,3 +107,28 @@ def annotate_writes(writes) -> list:
     """Convenience: take a list of (addr, value_bytes, baseline_bytes) and
     return [(addr, value_bytes, baseline_bytes, label_str), ...]."""
     return [(addr, val, base, decode_address(addr)) for (addr, val, base) in writes]
+
+
+def is_persistable(addr: int) -> bool:
+    """True if a write at this address makes sense to persist as a Dolphin AR
+    code that re-applies on every game load.
+
+    Only the ItemData template region qualifies. Everything else is
+    session-specific and would either no-op or actively misbehave if forced
+    on every load:
+
+    - SLOT (0x802AF5E4 + 0x280·N) holds the runtime army roster: a unit's
+      current HP / stats / equipment / action flags. The slot indices and
+      the units occupying them differ per save and per chapter; forcing a
+      slot-N field on every load can hit the wrong unit, write into a slot
+      with no occupant, or e.g. clamp an "已行动" flag to 0 every frame —
+      which is what causes the "天马骑士/飞龙骑士 无限行动" symptom.
+    - 所持金 / 奖励EX / etc. are global save-state fields that vary by
+      chapter; an AR override would lock them.
+
+    ItemData template fields (cost/mt/hit/wt/crit/range/wexp + trait + effect
+    pointers) ARE global static data loaded from the GCM into RAM, so an AR
+    that rewrites them after the game loads behaves exactly like a ROM
+    edit — which is what the user wants when they change "铁剑攻击 = 99"
+    or wire a new trait into Ragnell's empty slot."""
+    return ITEM_BASE <= addr < ITEM_BASE + ITEM_STEP * ITEM_COUNT

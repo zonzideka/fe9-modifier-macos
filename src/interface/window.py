@@ -64,7 +64,7 @@ class Window(QMainWindow):
         main_frame.setLayout(main_layout)
 
         self.setCentralWidget(main_frame)
-        self.setWindowTitle('苍炎的轨迹 动态修改器 V1.5')
+        self.setWindowTitle('苍炎的轨迹 动态修改器 V1.5.1')
         self.setWindowIcon(QIcon(':/ICON/icon.ico'))
         self.setMinimumHeight(480)
 
@@ -90,6 +90,9 @@ class Window(QMainWindow):
         self._tools_menu.addAction(a)
         a = QAction('清空当前 profile 日志', self)
         a.triggered.connect(self.act_reset_log)
+        self._tools_menu.addAction(a)
+        a = QAction('清空 Dolphin INI 中本工具的代码块…', self)
+        a.triggered.connect(self.act_clear_ini)
         self._tools_menu.addAction(a)
 
         self._tools_menu.addSeparator()
@@ -122,23 +125,65 @@ class Window(QMainWindow):
         if not hasattr(self, '_status_label'):
             return
         cur = dme_tracking.current_profile_name()
-        n = dme_tracking.count()
-        self._status_label.setText(f'profile: {cur}  |  {n} 处未导出修改')
+        persistable = dme_tracking.count(persistable_only=True)
+        total = dme_tracking.count(persistable_only=False)
+        transient = total - persistable
+        if transient:
+            self._status_label.setText(
+                f'profile: {cur}  |  {persistable} 处可导出  |  {transient} 处临时(本会话)'
+            )
+        else:
+            self._status_label.setText(f'profile: {cur}  |  {persistable} 处未导出修改')
 
     def act_export_codes(self):
-        writes = dme_tracking.snapshot()
+        writes = dme_tracking.snapshot(persistable_only=True)
         if not writes:
+            transient = dme_tracking.count(persistable_only=False)
+            extra = ''
+            if transient:
+                extra = (
+                    f'\n\n注: 本 profile 有 {transient} 处运行时修改(角色 HP / 装备 / 行动状态等),\n'
+                    '这些是 session-specific 字段,不能通过 AR 代码持久化 \n'
+                    '(强制每次启动写入会让游戏崩溃,或造成 "无限行动" 等异常),\n'
+                    '所以被自动排除在导出之外。'
+                )
             QMessageBox.information(
                 self, '无可导出的修改',
-                '当前 profile 还没有任何 RAM 写入,或所有修改都已被还原回初始值。\n\n'
-                '操作流程:\n'
-                '  1) 在修改器各 tab 中改字段\n'
-                '  2) 再来这里导出'
+                '当前 profile 还没有可持久化的物品模板修改,或所有改动都已被还原回初始值。\n\n'
+                '可导出的范围: 只有 ItemData 模板(物品攻击/特性/特效等全局参数)。'
+                + extra
             )
             return
         annotated = annotate_writes(writes)
         ExportDialog(annotated, profile_name=dme_tracking.current_profile_name(), parent=self).exec()
         self._refresh_status_bar()
+
+    def act_clear_ini(self):
+        from .export_codes import CHEAT_NAME, clear_dolphin_ini, gamesettings_dir, GAME_ID
+        import os
+        path = os.path.join(gamesettings_dir(), f'{GAME_ID}.ini')
+        res = QMessageBox.question(
+            self, '清空 Dolphin INI',
+            f'从以下文件中删除本工具自动生成的 cheat 块({CHEAT_NAME!r}):\n{path}\n\n'
+            '其他 cheat 不受影响。继续?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if res != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            cleared = clear_dolphin_ini()
+        except Exception as e:
+            QMessageBox.critical(self, '清空失败', f'{type(e).__name__}: {e}')
+            return
+        if not os.path.exists(cleared):
+            QMessageBox.information(self, '无需清空', f'{cleared}\n该 INI 文件不存在,无需清理。')
+        else:
+            QMessageBox.information(
+                self, '已清空',
+                f'已从 {cleared} 中移除本工具的 cheat 块。\n\n'
+                '重启 Dolphin / 重新加载游戏以让改动生效。'
+            )
 
     def act_reset_log(self):
         res = QMessageBox.question(
