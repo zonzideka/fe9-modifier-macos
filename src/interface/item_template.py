@@ -14,9 +14,13 @@ values from disk.
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QComboBox, QGridLayout, QLabel, QSizePolicy, QSpacerItem, QVBoxLayout
+from PySide6.QtWidgets import (
+    QComboBox, QGridLayout, QLabel, QMessageBox, QPushButton, QSizePolicy,
+    QSpacerItem, QVBoxLayout,
+)
 
 from parameter import DataSetting, EnumData
+from structure import dme_tracking
 from widget import BackgroundFrame, MapCombo, NameLabel, ValueSpin
 
 
@@ -85,19 +89,27 @@ class ItemTemplate(BackgroundFrame):
             main_layout.addWidget(NameLabel(label), effect_row, col, 1, 1)
             main_layout.addWidget(self[key], effect_row, col + 1, 1, 1)
 
+        # Revert button — restores the current item's fields to the baseline
+        # (the RAM values seen the first time the user touched any field this
+        # session, i.e. effectively the ROM defaults if nothing else changed).
+        self._btn_revert = QPushButton('还原此物品默认', self)
+        self._btn_revert.clicked.connect(self._on_revert_item)
+        main_layout.addWidget(self._btn_revert, effect_row + 1, 0, 1, 4)
+
         # Caveat note
         note = QLabel(
             '注意：修改作用于<b>所有</b>该种类物品（例如改"铁剑"攻击会影响地图上所有铁剑）。'
             '改动仅在当前游戏会话生效，读档恢复原值。<br>'
             '特性/特效下拉只列出 ROM 内已存在的选项；将原本为"——"的槽位填入新指针在运行时是<b>安全</b>的'
-            '（无 ROM 重定位表限制），但仍建议先手动存档以防引擎对特定槽位有隐藏假设。'
+            '（无 ROM 重定位表限制），但仍建议先手动存档以防引擎对特定槽位有隐藏假设。<br>'
+            '<b>还原此物品默认</b>：把当前物品在 RAM 中的所有字段回写到修改器启动时的值；如果已经导出 AR 代码到 Dolphin INI，请另外在 工具 → 清空 Dolphin INI 中本工具的代码块 清掉。'
         )
         note.setWordWrap(True)
         note.setStyleSheet('color:#888; padding:6px;')
-        main_layout.addWidget(note, effect_row + 1, 0, 1, 4)
+        main_layout.addWidget(note, effect_row + 2, 0, 1, 4)
 
         main_layout.addItem(QSpacerItem(1, 1, QSizePolicy.Expanding, QSizePolicy.Expanding),
-                            effect_row + 2, 0, 1, 4)
+                            effect_row + 3, 0, 1, 4)
         main_layout.setSpacing(3)
         self.setLayout(main_layout)
 
@@ -137,3 +149,30 @@ class ItemTemplate(BackgroundFrame):
             editor = self[key]
             if editor is not None:
                 editor.refresh()
+
+    def _on_revert_item(self):
+        """Revert the current item's full entry (0x60 bytes) to its baseline
+        in dme_tracking and refresh the editors to show the restored values."""
+        idx = self._selector.currentIndex()
+        if idx < 0:
+            return
+        name = (self._index_to_iid[idx][1] if 0 <= idx < len(self._index_to_iid)
+                else f'#{idx}')
+        start = DataSetting.ITEM_BASE + DataSetting.ITEM_STEP * idx
+        end = start + DataSetting.ITEM_STEP
+        n = dme_tracking.revert_range(start, end)
+        if n == 0:
+            QMessageBox.information(
+                self, '无需还原',
+                f'当前物品 ({name}) 在本会话中没有任何已记录的修改 ——\n'
+                'RAM 值已经是修改器看到的初始状态。'
+            )
+        else:
+            QMessageBox.information(
+                self, '已还原',
+                f'已将 {name} 的 {n} 处字段还原到修改器启动时的原值。\n\n'
+                '若已经导出 AR 代码到 Dolphin INI，下次启动游戏时代码仍会重新应用 ——\n'
+                '需要配合 工具 → 清空 Dolphin INI 中本工具的代码块 一起使用，\n'
+                '才能让 Dolphin 完全恢复 ROM 默认。'
+            )
+        self.refresh()

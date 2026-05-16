@@ -189,6 +189,33 @@ def reset() -> None:
     _save()
 
 
+def revert_range(start_addr: int, end_addr: int) -> int:
+    """Revert every tracked write in [start_addr, end_addr) to its baseline.
+
+    Writes the baseline value back into RAM via the real write_bytes (so the
+    running game sees the original byte immediately) AND removes the entry
+    from the current profile's log, so it won't appear in the next export.
+
+    Returns the number of writes that were reverted."""
+    _ensure_loaded()
+    pending = []
+    with _lock:
+        cur = _cur()
+        for addr in list(cur['writes'].keys()):
+            if start_addr <= addr < end_addr:
+                baseline = cur['baseline'].get(addr)
+                if baseline is not None:
+                    pending.append((addr, baseline))
+                cur['writes'].pop(addr, None)
+                cur['baseline'].pop(addr, None)
+    # Do RAM writes outside the lock — _raw_write_bytes goes straight to
+    # dolphin_memory_engine and can take a moment per call.
+    for addr, base in pending:
+        _raw_write_bytes(addr, base)
+    _save()
+    return len(pending)
+
+
 # ---------------------------------------------------------------------------
 # Profile management
 # ---------------------------------------------------------------------------

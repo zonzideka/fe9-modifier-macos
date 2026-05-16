@@ -2058,6 +2058,9 @@ class EnumData(QObject):
         ITEM_STEP = DataSetting.ITEM_STEP
         ITEM_COUNT = DataSetting.ITEM_COUNT
         seen_addrs = {}    # ptr -> ascii name
+
+        # Pass 1: scan referenced pointers in every ItemData entry's trait
+        # or effect slots — covers traits that at least one vanilla item uses.
         for i in range(ITEM_COUNT):
             entry = ITEM_BASE + ITEM_STEP * i
             for slot in range(slot_count):
@@ -2072,5 +2075,33 @@ class EnumData(QObject):
                         seen_addrs[ptr] = s
                 except Exception:
                     pass
+
+        # Pass 2: any enum entry not yet found (no vanilla item references it,
+        # e.g. 'shootonly' in stock FE9) is still present in FE8Data.bin's
+        # string region — we just have to find it by name. We bound the search
+        # by the known file-layout offsets relative to ItemData.
+        found_names = set(seen_addrs.values())
+        missing_names = [n for n in enum_dict if n not in found_names]
+        if missing_names:
+            # FE8Data.bin file layout (vanilla FE9, matches all known builds):
+            #   ItemData      @ file 0x9CB4 (entries; count word at 0x9CB0)
+            #   String region @ file 0x16928 - 0x1C76C (= 0x5E44 bytes)
+            STRING_REL_OFFSET = 0x16928 - 0x9CB4   # = 0xCC74
+            STRING_REGION_SIZE = 0x1C76C - 0x16928 # = 0x5E44
+            string_region_start = ITEM_BASE + STRING_REL_OFFSET
+            try:
+                blob = read_bytes(string_region_start, STRING_REGION_SIZE)
+            except Exception:
+                blob = b''
+            for name in missing_names:
+                # The name proper is null-bracketed inside the region: \0name\0.
+                # We match the trailing \0 too so a prefix-collision (e.g.
+                # 'twice' vs a hypothetical 'twicely') doesn't false-positive.
+                needle = b'\x00' + name.encode('ascii') + b'\x00'
+                idx = blob.find(needle)
+                if idx >= 0:
+                    # Name starts right after the leading \0.
+                    seen_addrs[string_region_start + idx + 1] = name
+
         # Convert to MapCombo-compatible {addr: (key, label)} format
         return {addr: (name, enum_dict[name]) for addr, name in seen_addrs.items()}

@@ -87,6 +87,45 @@ class TestWriteAndSnapshot(unittest.TestCase):
         t.set_current_profile('alt')
         self.assertEqual(len(t.snapshot(persistable_only=False)), 1)
 
+    def test_revert_range_restores_baseline_and_clears_log(self):
+        t, _ = _fresh_module()
+        # Three writes; only the middle one should be reverted by a narrow range.
+        t.write_bytes(0x1000, b'\x11')
+        t.write_bytes(0x2000, b'\x22\x22')
+        t.write_bytes(0x3000, b'\x33')
+        # Baseline of 0x2000 was b'\x00\x00' (fake_ram default)
+        n = t.revert_range(0x2000, 0x2010)
+        self.assertEqual(n, 1)
+        # Log only contains 0x1000 and 0x3000 now
+        addrs = {a for a, _, _ in t.snapshot(persistable_only=False)}
+        self.assertEqual(addrs, {0x1000, 0x3000})
+
+    def test_revert_range_no_matching_writes(self):
+        t, _ = _fresh_module()
+        t.write_bytes(0x1000, b'\xff')
+        n = t.revert_range(0x9000, 0xA000)
+        self.assertEqual(n, 0)
+        self.assertEqual(len(t.snapshot(persistable_only=False)), 1)
+
+    def test_revert_range_writes_baseline_back_to_ram(self):
+        # Use a shared fake_ram so we can verify the revert actually wrote back
+        if 'structure.dme_tracking' in sys.modules:
+            del sys.modules['structure.dme_tracking']
+        from structure import dme_tracking as t  # type: ignore
+        t._config_dir = lambda: tempfile.mkdtemp()
+        fake_ram = {0x5000: b'\x42\x42\x42\x42'}  # pre-existing "ROM" value
+        t.read_bytes = lambda a, n: fake_ram.get(a, b'\x00' * n)[:n]
+        t._raw_write_bytes = lambda a, d: fake_ram.update({a: bytes(d)})
+        t._loaded = False
+        t._profiles = {t.DEFAULT_PROFILE: t._empty_profile()}
+        t._current = t.DEFAULT_PROFILE
+        # User writes a new value — baseline gets snapshot as b'\x42\x42\x42\x42'
+        t.write_bytes(0x5000, b'\xDE\xAD\xBE\xEF')
+        self.assertEqual(fake_ram[0x5000], b'\xDE\xAD\xBE\xEF')
+        # Revert — RAM should go back to the baseline
+        t.revert_range(0x5000, 0x5010)
+        self.assertEqual(fake_ram[0x5000], b'\x42\x42\x42\x42')
+
     def test_persistable_only_filters_non_item_writes(self):
         from parameter.address_decoder import ITEM_BASE
         t, _ = _fresh_module()
